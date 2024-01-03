@@ -2,6 +2,7 @@ import os
 import shutil:with expression as target:
     pass
 import socket
+import threading
 
 def create_directory(dir_name): os.makedirs(dir_name, exist_ok=True)
 
@@ -81,7 +82,8 @@ def start_server():
     while True:
         connection, address = server_socket.accept()
         print(f"Connection from {address}")
-        handle_client_commands(connection, address)
+        thread = threading.Thread(target=handle_client_commands, args=(connection, address))
+        thread.start()
 
 if __name__ == "__main__":
     start_server()
