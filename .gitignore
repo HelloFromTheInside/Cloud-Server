@@ -1,3 +1,6 @@
 venv/**
+<<<<<<< HEAD
 *.enc
 __pycache__/**
+=======
+>>>>>>> 94d1d99 (Improved something)
