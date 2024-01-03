@@ -1,12 +1,9 @@
 import socket
 
 def send_command(command):
-    try:
-        client_socket.send(command.encode())
-        response = client_socket.recv(1024).decode()
-        print(response)
-    except Exception as e:
-        print(f"Error sending command: {e}")
+    client_socket.send(command.encode())
+    response = client_socket.recv(1024).decode()
+    print(response)
 
 # ls & cd only for navigation
 def display_help():
@@ -17,24 +14,25 @@ def display_help():
     print("qp - Ends the connection to the server")
     print("-help - Shows this help")
 
-host = '127.0.0.1'
-port = 12345
+if __name__ == "__main__":
+    host = '127.0.0.1'
+    port = 12345
 
-try:
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((host, port))
-except Exception as e:
-    print(f"Error connecting to the server: {e}")
-    exit()
-
-while True:
-    command = input(">>> ")
-    if command == '-help':
-        display_help()
-    else:
-        send_command(command)
-
-    if command == 'qp':
-        break
-
-client_socket.close()
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((host, port))
+        while True:
+            command = input(">>> ")
+            if command == '-help':
+                display_help()
+            else:
+                send_command(command)
+            if command == 'qp':
+                break
+    except socket.timeout as e:
+        print(f"Error connecting to the server: {e}")
+        exit()
+    finally:
+        client_socket.close()
+        print("Connection closed")
+        exit()

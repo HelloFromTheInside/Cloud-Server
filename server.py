@@ -2,9 +2,7 @@ import os
 import shutil
 import socket
 
-def create_directory(dir_name):
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name)
+def create_directory(dir_name): os.makedirs(dir_name, exist_ok=True)
 
 def handle_client_commands(connection, address):
     base_dir = os.getcwd()
@@ -75,6 +73,7 @@ def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((host, port))
     server_socket.listen()
+    server_socket.settimeout(1000)
 
     print("Server started, waiting for connections...")
 
@@ -85,3 +84,4 @@ def start_server():
 
 if __name__ == "__main__":
     start_server()
+>>>>>>> 8a1a1da (Improved something)
