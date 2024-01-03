@@ -11,7 +11,7 @@ def create_directory(dir_name):
 
 async def handle_client_commands(semaphore, reader, writer):
     async with semaphore:
-        address = writer.get_extra_info("peername")
+        address = writer.get_extra_info('peername')
         print(f"Connection from {address}")
         base_dir = os.getcwd()
         create_directory(os.path.join(base_dir, "Files"))
@@ -141,10 +141,3 @@ async def start_server():
     #     print("Server stopped")
     #     exit()
     #
-
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(start_server())
-    except KeyboardInterrupt:
-        print("The Server closed!")
