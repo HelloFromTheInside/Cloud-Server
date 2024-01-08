@@ -11,7 +11,7 @@ async def handle_client_commands(semaphore, reader, writer):
         base_dir = os.getcwd()
         create_directory(os.path.join(base_dir, "Files"))
         create_directory(os.path.join(base_dir, "Uploads"))
-        current_dir = base_dir
+        current_dir = os.path.join(base_dir, "Files")
 
         while True:
             command = (await reader.read(100)).decode()
@@ -27,13 +27,13 @@ async def handle_client_commands(semaphore, reader, writer):
                     response = f"Error: {e}"
 
             # will be deleted later
-            elif cmd == 'cd':
-                new_dir = os.path.join(base_dir, cmd_parts[1]) if len(cmd_parts) > 1 else base_dir
-                if os.path.exists(new_dir) and new_dir in [os.path.join(base_dir, "Files"), os.path.join(base_dir, "Uploads")]:
-                    current_dir = new_dir
-                    response = f"Current directory is {os.path.basename(current_dir)}"
-                else:
-                    response = "No such directory."
+            # elif cmd == 'cd':
+                # new_dir = os.path.join(base_dir, cmd_parts[1]) if len(cmd_parts) > 1 else base_dir
+                # if os.path.exists(new_dir) and new_dir in [os.path.join(base_dir, "Files"), os.path.join(base_dir, "Uploads")]:
+                    # current_dir = new_dir
+                    # response = f"Current directory is {os.path.basename(current_dir)}"
+                # else:
+                    # response = "No such directory."
 
             elif cmd == 'uf': # uploading / copying the filename from 'Files' to 'Uploads'
                 file_name = cmd_parts[1] if len(cmd_parts) > 1 else ""
@@ -45,6 +45,17 @@ async def handle_client_commands(semaphore, reader, writer):
                     print(f"Client {address} uploaded {file_name} to 'Uploads'") # message to the server
                 else:
                     response = f"File {file_name} not found in 'Files'"
+
+            elif cmd == 'df':  # download / copy file from 'Uploads' to 'Files'
+                file_name = cmd_parts[1] if len(cmd_parts) > 1 else "" # checks if there's additional text after 'df'
+                source_path = os.path.join(base_dir, "Uploads", file_name)
+                destination_path = os.path.join(base_dir, "Files", file_name)
+                if os.path.exists(source_path):
+                    shutil.copy(source_path, destination_path)
+                    response = f"File {file_name} was downloaded to 'Files'."
+                    print(f"Client {address} downloaded {file_name} ")  # message to server
+                else:
+                    response = f"File {file_name} not found in 'Uploads'"
 
             elif cmd == 'rm': # deleting files ether in Files or Uploads
                 file_name = cmd_parts[1] if len(cmd_parts) > 1 else ""
