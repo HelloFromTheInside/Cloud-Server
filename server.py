@@ -1,6 +1,7 @@
 import os
 import shutil
 import asyncio
+from opaque import CreateCredentialResponse, UserAuth, Ids
 
 def create_directory(dir_name): os.makedirs(dir_name, exist_ok=True)
 
