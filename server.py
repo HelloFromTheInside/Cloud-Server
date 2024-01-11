@@ -118,26 +118,8 @@ async def start_server():
     async with server:
         await server.serve_forever()
 
-    # host = '127.0.0.1'
-    # port = 12345
-    # try:
-    #     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     server_socket.bind((host, port))
-    #     server_socket.listen(5)
-    #     server_socket.settimeout(1000)
-    #
-    #     print("Server started, waiting for connections...")
-    #
-    #     while True:
-    #         connection, address = server_socket.accept()
-    #         print(f"Connection from {address}")
-    #         thread = threading.Thread(target=handle_client_commands, args=(connection, address))
-    #         thread.start()
-    # except Exception as e:
-    #     print(e)
-    # finally:
-    #     stop.set()
-    #     server_socket.close()
-    #     print("Server stopped")
-    #     exit()
-    #
+if __name__ == "__main__":
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        print("The Server closed!")
