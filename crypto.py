@@ -34,30 +34,27 @@ def hash(input: str):
     return digest.finalize()
 
 
-def register_server():
-    # recv
-    M = ""
+async def register_server(reader, writer):
+    M = await reader.read(32)
     skS = ""
     secS, pub = CreateRegistrationResponse(M, skS)
-    # send
-    # recv
-    rec0 = ""
+    writer.write(pub)
+    rec0 = await reader.read(192)
     rec1 = StoreUserRecord(secS, rec0)
     # create new User with password and username
 
 
-def login_server():
-    # recv
-    pub = ""
-    username = ""
+async def login_server(reader, writer):
+    data = await reader.read(160)
+    username = data[:64]
+    pub = data[64:]
     ids = Ids(username, "server")
     # get rec from Database
     rec = ""
     context = ""
     resp, sk, secS = CreateCredentialResponse(pub, rec, ids, context)
-    # send resp
-    # recv
-    encauthU = b""
+    writer.write(resp)
+    encauthU = await reader.read(92)
     cipher = ChaCha20Poly1305(sk)
     authU = decryption(cipher, encauthU)
     if UserAuth(secS, authU) != 0:
@@ -81,6 +78,7 @@ def login_user(client_socket: socket.socket):
     username = hash(input("Username: "))
     password = input("Passwort: ")
     ids = Ids(username, "server")
+
     pub, secU = CreateCredentialRequest(password)
     client_socket.send(username + pub)
     resp = client_socket.recv(320)
