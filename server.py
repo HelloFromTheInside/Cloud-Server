@@ -1,6 +1,7 @@
 import os
 import shutil
 import asyncio
+from crypto import handle_login_server
 
 
 def create_directory(dir_name):
@@ -16,10 +17,16 @@ async def handle_client_commands(reader, writer):
     current_dir = os.path.join(base_dir, "Files")
 
     while True:
+        if not (data := await handle_login_server(reader, writer)):
+            break
+        else:
+            session_key = data[0]
+            username = data[1].decode()
+            create_directory(os.path.join(base_dir, "Uploads", username))
         command = (await reader.read(100)).decode()
         cmd_parts = command.split(" ", 1)
         cmd = cmd_parts[0]
-
+        print(username, session_key)
         # will be deleted later
         if cmd == "ls":
             try:
@@ -40,7 +47,7 @@ async def handle_client_commands(reader, writer):
         elif cmd == "uf":  # uploading / copying the filename from 'Files' to 'Uploads'
             file_name = (cmd_parts[1] if len(cmd_parts) > 1 else "") + ".enc"
             source_path = os.path.join(base_dir, "Files", file_name)
-            destination_path = os.path.join(base_dir, "Uploads", file_name)
+            destination_path = os.path.join(base_dir, "Uploads", username, file_name)
             if os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
                 response = f"File {file_name} was uploaded to 'Uploads'."
@@ -54,7 +61,7 @@ async def handle_client_commands(reader, writer):
             file_name = (
                 cmd_parts[1] if len(cmd_parts) > 1 else ""
             ) + ".enc"  # checks if there's additional text after 'df'
-            source_path = os.path.join(base_dir, "Uploads", file_name)
+            source_path = os.path.join(base_dir, "Uploads", username, file_name)
             destination_path = os.path.join(base_dir, "Files", file_name)
             if os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)

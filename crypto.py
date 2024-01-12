@@ -19,92 +19,127 @@ from opaque import (
 import os
 from argon2.low_level import Type, hash_secret_raw
 
+from typing import Literal
+from asyncio import StreamReader, StreamWriter
+
 SALT_SIZE = 12
 
 
-def derive_key_from_password(password, salt):
+def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
     derived_key = hash_secret_raw(password, salt, 50, 102400, 50, 32, Type.ID)
     return derived_key
 
 
-def hash(input: str):
+def good_hash(input: str) -> bytes:
     hash = SHA3_512()
     digest = Hash(hash, None)
     digest.update(input.encode())
     return digest.finalize()
 
 
-async def register_server(reader, writer):
-    M = await reader.read(32)
+async def handle_login_server(
+    reader: StreamReader, writer: StreamWriter
+) -> tuple[bytes, bytes] | Literal[False]:
+    return await (login_server if await reader.read(3) == b"yes" else register_server)(
+        reader, writer
+    )
+
+
+async def register_server(
+    reader: StreamReader, writer: StreamWriter
+) -> tuple[bytes, bytes] | Literal[False]:
+    data = await reader.read(96)
+    username = data[:64]
+    M = data[64:]
     skS = ""
     secS, pub = CreateRegistrationResponse(M, skS)
     writer.write(pub)
     rec0 = await reader.read(192)
     rec1 = StoreUserRecord(secS, rec0)
     # create new User with password and username
+    return await login_server(reader, writer)
 
 
-async def login_server(reader, writer):
-    data = await reader.read(160)
-    username = data[:64]
-    pub = data[64:]
-    ids = Ids(username, "server")
-    # get rec from Database
-    rec = ""
-    context = ""
-    resp, sk, secS = CreateCredentialResponse(pub, rec, ids, context)
-    writer.write(resp)
-    data = await reader.read(116)  # Read salt + encacutU
-    salt = data[:24]
-    encauthU = data[24:]
-    key_sk = derive_key_from_password(sk, salt)
-    cipher = ChaCha20Poly1305(key_sk)
-    authU = decryption(cipher, encauthU)
-    if UserAuth(secS, authU) != 0:
-        return 1
-    return key_sk
+async def login_server(
+    reader: StreamReader, writer: StreamWriter
+) -> tuple[bytes, bytes] | Literal[False]:
+    tries = 5
+    while tries > 0:
+        data = await reader.read(160)  # Read username + publich key
+        username = data[:64]
+        pub = data[64:]
+        ids = Ids(username, "server")
+        # get rec from Database by username
+        rec = ""
+        context = ""
+        resp, sk, secS = CreateCredentialResponse(pub, rec, ids, context)
+        writer.write(resp)
+        data = await reader.read(116)  # Read salt + encacutU
+        salt = data[:24]
+        encauthU = data[24:]
+        key_sk = derive_key_from_password(sk, salt)
+        cipher = ChaCha20Poly1305(key_sk)
+        authU = decryption(cipher, encauthU)
+        if UserAuth(secS, authU) != 0:
+            tries -= 1
+        writer.write(("works" + " " * 47).encode())
+        return key_sk, username
+    writer.write("You have tried to many times! Please try later again".encode())
+    return False
 
 
-def register_user(client_socket: socket.socket):
-    username = hash(input("Username: "))
+def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
+    has_login = "yes" if input("Have already an account? (y/n) ") == "y" else "no"
+    client_socket.send(has_login.encode())
+    return (login_user if has_login == "yes" else register_user)(client_socket)
+
+
+def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
+    username = good_hash(input("Username: "))
     password = input("Passwort: ")
     ids = Ids(username, "server")
 
     secU, M = CreateRegistrationRequest(password)
-    client_socket.send(M)
+    client_socket.send(username + M)
     pub = client_socket.recv(64)
     rec0, _ = FinalizeRequest(secU, pub, ids)
     client_socket.send(rec0)
+    return login_user(client_socket)
 
 
-def login_user(client_socket: socket.socket):
-    username = hash(input("Username: "))
-    password = input("Passwort: ")
-    ids = Ids(username, "server")
+def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
+    while True:
+        username = good_hash(input("Username: "))
+        password = input("Passwort: ")
+        ids = Ids(username, "server")
 
-    pub, secU = CreateCredentialRequest(password)
-    client_socket.send(username + pub)
-    resp = client_socket.recv(320)
-    ctx = ""
-    sk, authU, _ = RecoverCredentials(resp, secU, ctx, ids)
-    salt = os.urandom(24)
-    key_sk = derive_key_from_password(sk, salt)
-    cipher = ChaCha20Poly1305(key_sk)
-    enc_authU = encryption(cipher, authU)
-    client_socket.send(salt + enc_authU)
-    return key_sk
+        pub, secU = CreateCredentialRequest(password)
+        client_socket.send(username + pub)
+        resp = client_socket.recv(320)
+        ctx = ""
+        sk, authU, _ = RecoverCredentials(resp, secU, ctx, ids)
+        salt = os.urandom(24)
+        key_sk = derive_key_from_password(sk, salt)
+        cipher = ChaCha20Poly1305(key_sk)
+        enc_authU = encryption(cipher, authU)
+        client_socket.send(salt + enc_authU)
+        if mes := client_socket.recv(52).decode() == ("works" + " " * 47):
+            break
+        return key_sk
+    print(mes)
+    return False
 
 
-def readfile(file_path: str):
+def readfile(file_path: str) -> bytes:
     try:
         with open(file_path, "rb") as file:
             text = file.read()
     except FileNotFoundError:
         print("The file does not exist.")
-        return 1
+        return b"1"
     except Exception as e:
         print(f"An error occurred: {e}")
-        return 1
+        return b"1"
     return text
 
 
@@ -120,7 +155,7 @@ def write_file(file_path: str, text: bytes) -> int:
 
 def filecryption(file_path: str, encrypt: bool) -> int:
     cipher = ChaCha20Poly1305(key)
-    if (text := readfile(file_path + ".enc" * (not encrypt))) == 1:
+    if (text := readfile(file_path + ".enc" * (not encrypt))) == b"1":
         return 1
     if (text := (encryption if encrypt else decryption)(cipher, text)) == 1:
         return 2
@@ -133,7 +168,7 @@ def encryption(cipher: ChaCha20Poly1305, plaintext: bytes) -> bytes:
     return salt + ciphertext
 
 
-def decryption(cipher: ChaCha20Poly1305, data: bytes):
+def decryption(cipher: ChaCha20Poly1305, data: bytes) -> Literal[1] | bytes:
     salt = data[:SALT_SIZE]
     ciphertext = data[SALT_SIZE:]
     try:

@@ -1,5 +1,5 @@
 import socket
-from crypto import filecryption
+from crypto import filecryption, handle_login_user
 
 
 def send_command(command) -> None:
@@ -26,6 +26,8 @@ if __name__ == "__main__":
 
     try:
         while True:
+            if not (session_key := handle_login_user(client_socket)):
+                break
             command = input(">>> ")
             cmd_parts = command.split(" ", 1)
 
