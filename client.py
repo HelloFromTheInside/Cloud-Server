@@ -25,9 +25,9 @@ if __name__ == "__main__":
     client_socket.connect((host, port))
 
     try:
+        if not (session_key := handle_login_user(client_socket)):
+            raise socket.timeout
         while True:
-            if not (session_key := handle_login_user(client_socket)):
-                break
             command = input(">>> ")
             cmd_parts = command.split(" ", 1)
 

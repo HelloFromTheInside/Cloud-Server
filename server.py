@@ -26,7 +26,6 @@ async def handle_client_commands(reader, writer):
         command = (await reader.read(100)).decode()
         cmd_parts = command.split(" ", 1)
         cmd = cmd_parts[0]
-        print(username, session_key)
         # will be deleted later
         if cmd == "ls":
             try:
@@ -96,9 +95,9 @@ async def handle_client_commands(reader, writer):
         try:
             await writer.drain()
         except ConnectionResetError:
-            print(f"Connection from {address} disconnected")  # message to server
             break
 
+    print(f"Connection from {address} disconnected")  # message to server
     writer.close()
 
 

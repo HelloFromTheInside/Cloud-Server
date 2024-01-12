@@ -21,8 +21,12 @@ from argon2.low_level import Type, hash_secret_raw
 
 from typing import Literal
 from asyncio import StreamReader, StreamWriter
+import base64
 
 SALT_SIZE = 12
+
+Username = b""
+Password = b""
 
 
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
@@ -48,15 +52,17 @@ async def handle_login_server(
 async def register_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
+    global Username, Password
     data = await reader.read(96)
     username = data[:64]
     M = data[64:]
-    skS = ""
-    secS, pub = CreateRegistrationResponse(M, skS)
+    secS, pub = CreateRegistrationResponse(M)
     writer.write(pub)
     rec0 = await reader.read(192)
     rec1 = StoreUserRecord(secS, rec0)
     # create new User with password and username
+    Username = username
+    Password = rec1
     return await login_server(reader, writer)
 
 
@@ -66,23 +72,26 @@ async def login_server(
     tries = 5
     while tries > 0:
         data = await reader.read(160)  # Read username + publich key
-        username = data[:64]
-        pub = data[64:]
+        username, pub = data[:64], data[64:]
         ids = Ids(username, "server")
         # get rec from Database by username
-        rec = ""
-        context = ""
-        resp, sk, secS = CreateCredentialResponse(pub, rec, ids, context)
+        rec = Password
+        resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
-        data = await reader.read(116)  # Read salt + encacutU
-        salt = data[:24]
-        encauthU = data[24:]
+        if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
+            print("Login failed.")
+            tries -= 1
+            continue
+        salt, encauthU = data[:24], data[24:]
         key_sk = derive_key_from_password(sk, salt)
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
-        if UserAuth(secS, authU) != 0:
+        if UserAuth(secS, authU) is not None:
+            print("Login failed.")
             tries -= 1
-        writer.write(("works" + " " * 47).encode())
+            continue
+        writer.write(("works").encode())
+        print("Login was succesfull")
         return key_sk, username
     writer.write("You have tried to many times! Please try later again".encode())
     return False
@@ -95,7 +104,7 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
-    username = good_hash(input("Username: "))
+    username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
     password = input("Passwort: ")
     ids = Ids(username, "server")
 
@@ -108,22 +117,27 @@ def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 
 def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
+    mes = ""
     while True:
-        username = good_hash(input("Username: "))
+        username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
         password = input("Passwort: ")
         ids = Ids(username, "server")
 
         pub, secU = CreateCredentialRequest(password)
         client_socket.send(username + pub)
         resp = client_socket.recv(320)
-        ctx = ""
-        sk, authU, _ = RecoverCredentials(resp, secU, ctx, ids)
+        try:
+            sk, authU, _ = RecoverCredentials(resp, secU, "", ids)
+        except ValueError:
+            print("Login failed.")
+            client_socket.send("Retry".encode())
+            continue
         salt = os.urandom(24)
         key_sk = derive_key_from_password(sk, salt)
         cipher = ChaCha20Poly1305(key_sk)
         enc_authU = encryption(cipher, authU)
         client_socket.send(salt + enc_authU)
-        if mes := client_socket.recv(52).decode() == ("works" + " " * 47):
+        if mes := client_socket.recv(52).decode() != ("works"):
             break
         return key_sk
     print(mes)
