@@ -171,7 +171,7 @@ def filecryption(file_path: str, encrypt: bool) -> int:
     cipher = ChaCha20Poly1305(key)
     if (text := readfile(file_path + ".enc" * (not encrypt))) == b"1":
         return 1
-    if (text := (encryption if encrypt else decryption)(cipher, text)) == 1:
+    if not (text := (encryption if encrypt else decryption)(cipher, text)):
         return 2
     return write_file(file_path + ".enc" * encrypt, text)
 
@@ -182,11 +182,11 @@ def encryption(cipher: ChaCha20Poly1305, plaintext: bytes) -> bytes:
     return salt + ciphertext
 
 
-def decryption(cipher: ChaCha20Poly1305, data: bytes) -> Literal[1] | bytes:
+def decryption(cipher: ChaCha20Poly1305, data: bytes) -> Literal[0] | bytes:
     salt = data[:SALT_SIZE]
     ciphertext = data[SALT_SIZE:]
     try:
         plaintext = cipher.decrypt(salt, ciphertext, None)
     except InvalidTag:
-        return 1
+        return 0
     return plaintext

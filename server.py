@@ -1,7 +1,8 @@
 import os
 import shutil
 import asyncio
-from crypto import handle_login_server
+from crypto import handle_login_server, encryption, decryption
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 
 def create_directory(dir_name):
@@ -12,18 +13,22 @@ async def handle_client_commands(reader, writer):
     address = writer.get_extra_info("peername")
     print(f"Connection from {address}")
     base_dir = os.getcwd()
-    create_directory(os.path.join(base_dir, "Files"))
-    create_directory(os.path.join(base_dir, "Uploads"))
-    current_dir = os.path.join(base_dir, "Files")
+    server_name = "Uploads"
+    create_directory(current_dir := os.path.join(base_dir, "Files"))
+    if not (data := await handle_login_server(reader, writer)):
+        print(f"Connection from {address} disconnected")  # message to server
+        writer.close()
+        return
+    cipher = ChaCha20Poly1305(data[0])
+    username = data[1].decode()
+    create_directory(server_path := os.path.join(base_dir, server_name, username))
 
     while True:
-        if not (data := await handle_login_server(reader, writer)):
-            break
-        else:
-            session_key = data[0]
-            username = data[1].decode()
-            create_directory(os.path.join(base_dir, "Uploads", username))
-        command = (await reader.read(100)).decode()
+        command = ""
+        if not (data := decryption(cipher, await reader.read(1024))):
+            await write(cipher, writer, "Data was corupted, please try again!")
+            continue
+        command: str = data.decode()
         cmd_parts = command.split(" ", 1)
         cmd = cmd_parts[0]
         # will be deleted later
@@ -34,19 +39,10 @@ async def handle_client_commands(reader, writer):
             except Exception as e:
                 response = f"Error: {e}"
 
-        # will be deleted later
-        # elif cmd == 'cd':
-        # new_dir = os.path.join(base_dir, cmd_parts[1]) if len(cmd_parts) > 1 else base_dir
-        # if os.path.exists(new_dir) and new_dir in [os.path.join(base_dir, "Files"), os.path.join(base_dir, "Uploads")]:
-        # current_dir = new_dir
-        # response = f"Current directory is {os.path.basename(current_dir)}"
-        # else:
-        # response = "No such directory."
-
         elif cmd == "uf":  # uploading / copying the filename from 'Files' to 'Uploads'
             file_name = (cmd_parts[1] if len(cmd_parts) > 1 else "") + ".enc"
             source_path = os.path.join(base_dir, "Files", file_name)
-            destination_path = os.path.join(base_dir, "Uploads", username, file_name)
+            destination_path = os.path.join(server_path, file_name)
             if os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
                 response = f"File {file_name} was uploaded to 'Uploads'."
@@ -60,7 +56,7 @@ async def handle_client_commands(reader, writer):
             file_name = (
                 cmd_parts[1] if len(cmd_parts) > 1 else ""
             ) + ".enc"  # checks if there's additional text after 'df'
-            source_path = os.path.join(base_dir, "Uploads", username, file_name)
+            source_path = os.path.join(server_path, file_name)
             destination_path = os.path.join(base_dir, "Files", file_name)
             if os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
@@ -69,9 +65,9 @@ async def handle_client_commands(reader, writer):
             else:
                 response = f"File {file_name} not found in 'Uploads'"
 
-        elif cmd == "rm":  # deleting files ether in Files or Uploads
+        elif cmd == "rm":  # deleting files either in Uploads
             file_name = cmd_parts[1] if len(cmd_parts) > 1 else ""
-            file_path = os.path.join(current_dir, file_name)
+            file_path = os.path.join(server_path, file_name)
             if os.path.exists(file_path):
                 os.remove(file_path)
                 response = f"File {file_name} deleted"
@@ -83,22 +79,26 @@ async def handle_client_commands(reader, writer):
 
         elif cmd == "qp":
             response = "Disconnecting."
-            writer.write(response.encode())
-            await writer.drain()
+            await write(cipher, writer, response)
             print(f"Connection from {address} disconnected")  # message to server
             break
 
         else:
             response = "Unknown command, please use -help"
 
-        writer.write(response.encode())
         try:
-            await writer.drain()
+            await write(cipher, writer, response)
         except ConnectionResetError:
             break
 
     print(f"Connection from {address} disconnected")  # message to server
     writer.close()
+
+
+async def write(cipher, writer, response):
+    enc_response = encryption(cipher, response.encode())
+    writer.write(enc_response)
+    await writer.drain()
 
 
 async def start_server():
