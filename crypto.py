@@ -54,12 +54,15 @@ async def login_server(reader, writer):
     context = ""
     resp, sk, secS = CreateCredentialResponse(pub, rec, ids, context)
     writer.write(resp)
-    encauthU = await reader.read(92)
-    cipher = ChaCha20Poly1305(sk)
+    data = await reader.read(116)  # Read salt + encacutU
+    salt = data[:24]
+    encauthU = data[24:]
+    key_sk = derive_key_from_password(sk, salt)
+    cipher = ChaCha20Poly1305(key_sk)
     authU = decryption(cipher, encauthU)
     if UserAuth(secS, authU) != 0:
         return 1
-    return
+    return key_sk
 
 
 def register_user(client_socket: socket.socket):
@@ -84,10 +87,12 @@ def login_user(client_socket: socket.socket):
     resp = client_socket.recv(320)
     ctx = ""
     sk, authU, _ = RecoverCredentials(resp, secU, ctx, ids)
-    cipher = ChaCha20Poly1305(sk)
+    salt = os.urandom(24)
+    key_sk = derive_key_from_password(sk, salt)
+    cipher = ChaCha20Poly1305(key_sk)
     enc_authU = encryption(cipher, authU)
-    client_socket.send(enc_authU)
-    return sk
+    client_socket.send(salt + enc_authU)
+    return key_sk
 
 
 def readfile(file_path: str):
