@@ -3,7 +3,6 @@ import socket
 # For File Encryption
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.hashes import SHA3_512, Hash
 from secret import key
 from opaque import (
     Ids,
@@ -26,6 +25,7 @@ import base64
 SALT_SIZE = 12
 
 Password = {b"": b""}
+user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
 
 
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
@@ -33,11 +33,12 @@ def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
     return derived_key
 
 
-def good_hash(input: str) -> bytes:
-    hash = SHA3_512()
-    digest = Hash(hash, None)
-    digest.update(input.encode())
-    return digest.finalize()
+# def good_hash(input: str) -> bytes:
+#     hash = SHA3_512()
+#     digest = Hash(hash, None)
+#     digest.update(input.encode())
+#     return digest.finalize()
+#
 
 
 async def handle_login_server(
@@ -52,11 +53,14 @@ async def handle_login_server(
 async def register_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
-    global Username, Password
-    data = await reader.read(120)
+    global Password
+    data = await reader.read(64)
     if not data:
         return False
-    username, M = data[:88], data[88:]
+    username, M = (
+        base64.urlsafe_b64encode(derive_key_from_password(data[:32], user_salt)),
+        data[32:],
+    )
     secS, pub = CreateRegistrationResponse(M)
     writer.write(pub)
     rec0 = await reader.read(192)
@@ -73,27 +77,36 @@ async def login_server(
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
     while tries > 0:
-        data = await reader.read(184)  # Read username + publich key
+        data = await reader.read(128)  # Read username + public key
         if not data:
             return False
-        username, pub = data[:88], data[88:]
+        username, pub = (
+            base64.urlsafe_b64encode(derive_key_from_password(data[:32], user_salt)),
+            data[32:],
+        )
         ids = Ids(username, "server")
         # get rec from Database by username
         rec = Password[username]
+        print(1)
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
+        print(2)
         writer.write(resp)
+        print(5)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
             print("Login failed.")
             tries -= 1
             continue
+        print(4)
         if not data:
             return False
+        print(3)
         salt, encauthU = data[:24], data[24:]
         key_sk = derive_key_from_password(sk, salt)
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
         if UserAuth(secS, authU) is not None:
             print("Login failed.")
+            writer.write("Login failed!".encode())
             tries -= 1
             continue
         writer.write(("works").encode())
@@ -111,7 +124,7 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
     print("Registration: ")
-    username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
+    username = derive_key_from_password(input("Username: ").encode(), user_salt)
     password = input("Passwort: ")
     ids = Ids(username, "server")
 
@@ -127,16 +140,20 @@ def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
     mes = ""
     print("Login:")
     while True:
-        username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
+        username = derive_key_from_password(input("Username: ").encode(), user_salt)
         password = input("Passwort: ")
-        ids = Ids(username, "server")
+        ids = Ids(
+            base64.urlsafe_b64encode(derive_key_from_password(username, user_salt)),
+            "server",
+        )
 
         pub, secU = CreateCredentialRequest(password)
         client_socket.send(username + pub)
         resp = client_socket.recv(320)
         try:
             sk, authU, _ = RecoverCredentials(resp, secU, "", ids)
-        except ValueError:
+        except ValueError as e:
+            print(e)
             print("Login failed.")
             client_socket.send("Retry".encode())
             continue
