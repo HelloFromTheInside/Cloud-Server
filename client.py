@@ -1,16 +1,26 @@
 import socket
-from crypto import filecryption, handle_login_user, encryption, decryption
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from crypto import (
+    filecryption,
+    handle_login_user,
+    encryption,
+    decryption,
+    create_new_cipher,
+)
 
 
-def send_command(cipher, command) -> None:
-    enc_command = encryption(cipher, command)
-    client_socket.send(enc_command)
-    enc_response = client_socket.recv(1024)
+def send_command(key: bytes, salt: bytes, command: str) -> tuple[bytes, bytes]:
+    key, salt, cipher = create_new_cipher(key, salt)
+    enc_command = encryption(cipher, command.encode())
+    client_socket.send(salt + enc_command)
+    data = client_socket.recv(1024)
+    old_salt = data[:24]
+    enc_response = data[24:]
+    key, salt, cipher = create_new_cipher(key, old_salt)
     if not (response := decryption(cipher, enc_response)):
         print("File is corrupted, please continue with precaution!")
-        return
-    print(response)
+        return key, salt
+    print(response.decode())
+    return key, salt
 
 
 # ls & cd only for navigation
@@ -30,11 +40,15 @@ if __name__ == "__main__":
     client_socket.connect((host, port))
 
     try:
-        if not (session_key := handle_login_user(client_socket)):
+        salt = b""
+        if not (key := handle_login_user(client_socket)):
             raise socket.timeout
-        cipher = ChaCha20Poly1305(session_key)
         while True:
-            command = input(">>> ")
+            try:
+                command = input(">>> ")
+            except KeyboardInterrupt:
+                key, salt = send_command(key, salt, "qp")
+                break
             cmd_parts = command.split(" ", 1)
 
             if command == "-help":
@@ -45,16 +59,18 @@ if __name__ == "__main__":
                 if filecryption(file_name, True):
                     continue
             elif cmd_parts[0] == "df":
-                send_command(cipher, command)
+                key, salt = send_command(key, salt, command)
                 file_name = "Files/" + (cmd_parts[1] if len(cmd_parts) > 1 else "")
                 if filecryption(file_name, False):
                     print("File is corrupted, please continue with precaution!")
                 continue
-            send_command(cipher, command)
+            key, salt = send_command(key, salt, command)
             if command == "qp":
                 break
     except socket.timeout as e:
         print(f"Error connecting to the server: {e}")
+    except Exception as e:
+        print(e)
     finally:
         client_socket.close()
         print("Connection closed")

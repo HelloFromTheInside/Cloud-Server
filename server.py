@@ -1,15 +1,15 @@
 import os
 import shutil
 import asyncio
-from crypto import handle_login_server, encryption, decryption
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from crypto import handle_login_server, encryption, decryption, create_new_cipher
+from asyncio import StreamReader, StreamWriter
 
 
-def create_directory(dir_name):
+def create_directory(dir_name: str) -> None:
     os.makedirs(dir_name, exist_ok=True)
 
 
-async def handle_client_commands(reader, writer):
+async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> None:
     address = writer.get_extra_info("peername")
     print(f"Connection from {address}")
     base_dir = os.getcwd()
@@ -19,14 +19,19 @@ async def handle_client_commands(reader, writer):
         print(f"Connection from {address} disconnected")  # message to server
         writer.close()
         return
-    cipher = ChaCha20Poly1305(data[0])
+    key = data[0]
     username = data[1].decode()
     create_directory(server_path := os.path.join(base_dir, server_name, username))
 
     while True:
-        command = ""
-        if not (data := decryption(cipher, await reader.read(1024))):
-            await write(cipher, writer, "Data was corupted, please try again!")
+        data = await reader.read(1024)
+        old_salt = data[:24]
+        enc_command = data[24:]
+        key, salt, cipher = create_new_cipher(key, old_salt)
+        if not (data := decryption(cipher, enc_command)):
+            key, salt = await write(
+                key, writer, "Data was corupted, please try again!", salt
+            )
             continue
         command: str = data.decode()
         cmd_parts = command.split(" ", 1)
@@ -79,29 +84,31 @@ async def handle_client_commands(reader, writer):
 
         elif cmd == "qp":
             response = "Disconnecting."
-            await write(cipher, writer, response)
-            print(f"Connection from {address} disconnected")  # message to server
+            await write(key, writer, response, salt)
             break
 
         else:
             response = "Unknown command, please use -help"
 
         try:
-            await write(cipher, writer, response)
+            key, salt = await write(key, writer, response, salt)
         except ConnectionResetError:
             break
-
     print(f"Connection from {address} disconnected")  # message to server
     writer.close()
 
 
-async def write(cipher, writer, response):
+async def write(
+    key: bytes, writer: StreamWriter, response: str, salt: bytes
+) -> tuple[bytes, bytes]:
+    key, salt, cipher = create_new_cipher(key, salt)
     enc_response = encryption(cipher, response.encode())
-    writer.write(enc_response)
+    writer.write(salt + enc_response)
     await writer.drain()
+    return key, salt
 
 
-async def start_server():
+async def start_server() -> None:
     max_connections = 5
 
     server = await asyncio.start_server(

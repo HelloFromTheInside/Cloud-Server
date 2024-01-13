@@ -25,8 +25,7 @@ import base64
 
 SALT_SIZE = 12
 
-Username = b""
-Password = b""
+Password = {b"": b""}
 
 
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
@@ -44,25 +43,28 @@ def good_hash(input: str) -> bytes:
 async def handle_login_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
-    return await (login_server if await reader.read(3) == b"yes" else register_server)(
-        reader, writer
-    )
+    data = await reader.read(3)
+    if not data:
+        return False
+    return await (login_server if data == b"yes" else register_server)(reader, writer)
 
 
 async def register_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
     global Username, Password
-    data = await reader.read(96)
-    username = data[:64]
-    M = data[64:]
+    data = await reader.read(120)
+    if not data:
+        return False
+    username, M = data[:88], data[88:]
     secS, pub = CreateRegistrationResponse(M)
     writer.write(pub)
     rec0 = await reader.read(192)
+    if not rec0:
+        return False
     rec1 = StoreUserRecord(secS, rec0)
     # create new User with password and username
-    Username = username
-    Password = rec1
+    Password[username] = rec1
     return await login_server(reader, writer)
 
 
@@ -71,17 +73,21 @@ async def login_server(
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
     while tries > 0:
-        data = await reader.read(160)  # Read username + publich key
-        username, pub = data[:64], data[64:]
+        data = await reader.read(184)  # Read username + publich key
+        if not data:
+            return False
+        username, pub = data[:88], data[88:]
         ids = Ids(username, "server")
         # get rec from Database by username
-        rec = Password
+        rec = Password[username]
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
             print("Login failed.")
             tries -= 1
             continue
+        if not data:
+            return False
         salt, encauthU = data[:24], data[24:]
         key_sk = derive_key_from_password(sk, salt)
         cipher = ChaCha20Poly1305(key_sk)
@@ -104,6 +110,7 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
+    print("Registration: ")
     username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
     password = input("Passwort: ")
     ids = Ids(username, "server")
@@ -118,6 +125,7 @@ def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
     mes = ""
+    print("Login:")
     while True:
         username = base64.urlsafe_b64encode(good_hash(input("Username: ")))
         password = input("Passwort: ")
@@ -139,6 +147,7 @@ def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
         client_socket.send(salt + enc_authU)
         if mes := client_socket.recv(52).decode() != ("works"):
             break
+        print("Login was succesfull!")
         return key_sk
     print(mes)
     return False
@@ -190,3 +199,13 @@ def decryption(cipher: ChaCha20Poly1305, data: bytes) -> Literal[0] | bytes:
     except InvalidTag:
         return 0
     return plaintext
+
+
+def create_new_cipher(
+    key: bytes, salt: bytes = b""
+) -> tuple[bytes, bytes, ChaCha20Poly1305]:
+    if not salt:
+        salt = os.urandom(24)
+    new_key = derive_key_from_password(key, salt)
+    cipher = ChaCha20Poly1305(new_key)
+    return key, salt, cipher
