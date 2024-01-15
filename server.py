@@ -4,12 +4,14 @@ import asyncio
 from crypto import handle_login_server, encryption, decryption, create_new_cipher
 from asyncio import StreamReader, StreamWriter
 
+
 # input vaildation to path traversal
 def safe_path(base_path, path, follow_symlinks=True):
     if follow_symlinks:
         return os.path.realpath(path).startswith(base_path)
     else:
         return os.path.abspath(path).startswith(base_path)
+
 
 def create_directory(dir_name: str) -> None:
     os.makedirs(dir_name, exist_ok=True)
@@ -52,22 +54,21 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
 
         elif cmd == "uf":  # uploading / copying the filename from 'Files' to 'Uploads'
             file_name = (cmd_parts[1] if len(cmd_parts) > 1 else "") + ".enc"
-            source_path = os.path.join(base_dir, "Files", file_name)
-            destination_path = os.path.join(server_path, file_name)
+            source_path = os.path.abspath(os.path.join(current_dir, file_name))
+            destination_path = os.path.abspath(os.path.join(server_path, file_name))
 
-            if safe_path(os.path.join(base_dir, "Files"), source_path) and os.path.exists(source_path):
+            if safe_path(server_path, destination_path) and os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
                 response = f"File {file_name} was uploaded to 'Uploads'."
             else:
                 response = f"File {file_name} not found in 'Files'"
 
-
         elif cmd == "df":  # download / copy file from 'Uploads' to 'Files'
             file_name = (
                 cmd_parts[1] if len(cmd_parts) > 1 else ""
             ) + ".enc"  # checks if there's additional text after 'df'
-            source_path = os.path.join(server_path, file_name)
-            destination_path = os.path.join(base_dir, "Files", file_name)
+            source_path = os.path.abspath(os.path.join(server_path, file_name))
+            destination_path = os.path.abspath(os.path.join(current_dir, file_name))
 
             if safe_path(server_path, source_path) and os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)

@@ -17,7 +17,7 @@ def send_command(key: bytes, salt: bytes, command: str) -> tuple[bytes, bytes]:
     enc_response = data[24:]
     key, salt, cipher = create_new_cipher(key, old_salt)
     if not (response := decryption(cipher, enc_response)):
-        print("File is corrupted, please continue with precaution!")
+        print("Message is corrupted, please continue with precaution!")
         return key, salt
     print(response.decode())
     return key, salt

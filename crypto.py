@@ -2,6 +2,7 @@ import socket
 
 # For File Encryption
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.hashes import SHA3_512, Hash
 from cryptography.exceptions import InvalidTag
 from secret import key
 from opaque import (
@@ -33,12 +34,11 @@ def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
     return derived_key
 
 
-# def good_hash(input: str) -> bytes:
-#     hash = SHA3_512()
-#     digest = Hash(hash, None)
-#     digest.update(input.encode())
-#     return digest.finalize()
-#
+def good_hash(input: str) -> bytes:
+    hash = SHA3_512()
+    digest = Hash(hash, None)
+    digest.update(input.encode())
+    return digest.finalize()
 
 
 async def handle_login_server(
@@ -54,12 +54,12 @@ async def register_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
     global Password
-    data = await reader.read(64)
+    data = await reader.read(96)
     if not data:
         return False
     username, M = (
-        base64.urlsafe_b64encode(derive_key_from_password(data[:32], user_salt)),
-        data[32:],
+        base64.urlsafe_b64encode(derive_key_from_password(data[:64], user_salt)),
+        data[64:],
     )
     secS, pub = CreateRegistrationResponse(M)
     writer.write(pub)
@@ -77,29 +77,26 @@ async def login_server(
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
     while tries > 0:
-        data = await reader.read(128)  # Read username + public key
+        data = await reader.read(160)  # Read username + public key
         if not data:
             return False
-        username, pub = (
-            base64.urlsafe_b64encode(derive_key_from_password(data[:32], user_salt)),
-            data[32:],
-        )
+        username, pub = data[:64], data[64:]
+
         ids = Ids(username, "server")
+        username = base64.urlsafe_b64encode(
+            derive_key_from_password(username, user_salt)
+        )
+
         # get rec from Database by username
         rec = Password[username]
-        print(1)
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
-        print(2)
         writer.write(resp)
-        print(5)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
             print("Login failed.")
             tries -= 1
             continue
-        print(4)
         if not data:
             return False
-        print(3)
         salt, encauthU = data[:24], data[24:]
         key_sk = derive_key_from_password(sk, salt)
         cipher = ChaCha20Poly1305(key_sk)
@@ -124,7 +121,7 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
     print("Registration: ")
-    username = derive_key_from_password(input("Username: ").encode(), user_salt)
+    username = good_hash(input("Username: "))
     password = input("Passwort: ")
     ids = Ids(username, "server")
 
@@ -140,10 +137,10 @@ def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
     mes = ""
     print("Login:")
     while True:
-        username = derive_key_from_password(input("Username: ").encode(), user_salt)
+        username = good_hash(input("Username: "))
         password = input("Passwort: ")
         ids = Ids(
-            base64.urlsafe_b64encode(derive_key_from_password(username, user_salt)),
+            username,
             "server",
         )
 
