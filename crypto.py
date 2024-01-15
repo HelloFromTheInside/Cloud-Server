@@ -22,6 +22,7 @@ from argon2.low_level import Type, hash_secret_raw
 from typing import Literal
 from asyncio import StreamReader, StreamWriter
 import base64
+from getpass import getpass
 
 SALT_SIZE = 12
 
@@ -86,9 +87,13 @@ async def login_server(
         username = base64.urlsafe_b64encode(
             derive_key_from_password(username, user_salt)
         )
-
-        # get rec from Database by username
-        rec = Password[username]
+        try:
+            # get rec from Database by username
+            rec = Password[username]
+        except Exception:
+            writer.write("Retry".encode())
+            tries -= 1
+            continue
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
@@ -122,7 +127,7 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
     print("Registration: ")
     username = good_hash(input("Username: "))
-    password = input("Passwort: ")
+    password = getpass("Password: ")
     ids = Ids(username, "server")
 
     secU, M = CreateRegistrationRequest(password)
@@ -138,7 +143,7 @@ def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
     print("Login:")
     while True:
         username = good_hash(input("Username: "))
-        password = input("Passwort: ")
+        password = getpass("Password: ")
         ids = Ids(
             username,
             "server",
@@ -146,7 +151,9 @@ def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
         pub, secU = CreateCredentialRequest(password)
         client_socket.send(username + pub)
-        resp = client_socket.recv(320)
+        if (resp := client_socket.recv(320)) == "Retry".encode():
+            print("Please try again!")
+            continue
         try:
             sk, authU, _ = RecoverCredentials(resp, secU, "", ids)
         except ValueError as e:
