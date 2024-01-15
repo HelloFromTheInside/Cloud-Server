@@ -37,6 +37,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
         enc_command = data[24:]
         key, salt, cipher = create_new_cipher(key, old_salt)
         if not (data := decryption(cipher, enc_command)):
+            print("Data was corupted, please try again!")
             key, salt = await write(
                 key, writer, "Data was corupted, please try again!", salt
             )
@@ -53,20 +54,21 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                 response = f"Error: {e}"
 
         elif cmd == "uf":  # uploading / copying the filename from 'Files' to 'Uploads'
-            file_name = (cmd_parts[1] if len(cmd_parts) > 1 else "") + ".enc"
+            file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
             source_path = os.path.abspath(os.path.join(current_dir, file_name))
             destination_path = os.path.abspath(os.path.join(server_path, file_name))
-
             if safe_path(server_path, destination_path) and os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
-                response = f"File {file_name} was uploaded to 'Uploads'."
+                response = f"File {file_name} was uploaded."
             else:
                 response = f"File {file_name} not found in 'Files'"
+                if not safe_path(server_path, source_path):
+                    print(
+                        f"{username} {address} tried to uplaod to a folder ({source_path}), which he has no permission to access"
+                    )
 
         elif cmd == "df":  # download / copy file from 'Uploads' to 'Files'
-            file_name = (
-                cmd_parts[1] if len(cmd_parts) > 1 else ""
-            ) + ".enc"  # checks if there's additional text after 'df'
+            file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
             source_path = os.path.abspath(os.path.join(server_path, file_name))
             destination_path = os.path.abspath(os.path.join(current_dir, file_name))
 
@@ -74,12 +76,16 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                 shutil.copy(source_path, destination_path)
                 response = f"File {file_name} was downloaded to 'Files'."
             else:
-                response = f"File {file_name} not found in 'Uploads'."
+                response = f"File {file_name} not found"
+                if not safe_path(server_path, source_path):
+                    print(
+                        f"{username} {address} tried to download a file ({source_path}), which he has no permission to access"
+                    )
 
         elif cmd == "rm":  # deleting files either in Uploads
-            file_name = cmd_parts[1] if len(cmd_parts) > 1 else ""
+            file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
             file_path = os.path.join(server_path, file_name)
-            if os.path.exists(file_path):
+            if safe_path(server_path, file_path) and os.path.exists(file_path):
                 os.remove(file_path)
                 response = f"File {file_name} deleted"
                 print(
@@ -87,6 +93,10 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                 )  # message to server
             else:
                 response = "File not found"
+                if not safe_path(server_path, file_path):
+                    print(
+                        f"{username} {address} tried to delete a file ({file_path}), which he has no permission to access"
+                    )
 
         elif cmd == "qp":
             response = "Disconnecting."

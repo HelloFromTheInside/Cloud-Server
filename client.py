@@ -27,8 +27,9 @@ def send_command(key: bytes, salt: bytes, command: str) -> tuple[bytes, bytes]:
 def display_help() -> None:
     print("Available commands:")
     print("ls - Lists all files in the current directory")
-    print("cd <directory> - Changes the current directory")
     print("uf <filename> - Copies the file from 'Files' to 'Uploads'")
+    print("df <filename> - Copies the file from 'Uploads' to 'Files'")
+    print("rm <filename> - Deletes a file on the server")
     print("qp - Ends the connection to the server")
     print("-help - Shows this help")
 
@@ -38,7 +39,6 @@ if __name__ == "__main__":
     port = 12345
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((host, port))
-
     try:
         salt = b""
         if not (key := handle_login_user(client_socket)):
@@ -61,7 +61,7 @@ if __name__ == "__main__":
             elif cmd_parts[0] == "df":
                 key, salt = send_command(key, salt, command)
                 file_name = "Files/" + (cmd_parts[1] if len(cmd_parts) > 1 else "")
-                if filecryption(file_name, False):
+                if filecryption(file_name, False) == 2:
                     print("File is corrupted, please continue with precaution!")
                 continue
             key, salt = send_command(key, salt, command)

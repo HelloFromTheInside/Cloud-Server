@@ -172,7 +172,7 @@ def readfile(file_path: str) -> bytes:
         with open(file_path, "rb") as file:
             text = file.read()
     except FileNotFoundError:
-        print("The file does not exist.")
+        print("File not found!")
         return b"1"
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -186,7 +186,7 @@ def write_file(file_path: str, text: bytes) -> int:
             file.write(text)
     except Exception as e:
         print(f"An error occurred: {e}")
-        return 1
+        return 3
     return 0
 
 
