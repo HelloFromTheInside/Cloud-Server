@@ -32,7 +32,10 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
     create_directory(server_path := os.path.join(base_dir, server_name, username))
 
     while True:
-        data = await reader.read(1024)
+        try:
+            data = await asyncio.wait_for(reader.read(1024), timeout=1000)
+        except TimeoutError:
+            break
         old_salt = data[:24]
         enc_command = data[24:]
         key, salt, cipher = create_new_cipher(key, old_salt)
@@ -59,6 +62,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
             destination_path = os.path.abspath(os.path.join(server_path, file_name))
             if safe_path(server_path, destination_path) and os.path.exists(source_path):
                 shutil.copy(source_path, destination_path)
+                os.chmod(destination_path, 0o440)
                 response = f"File {file_name} was uploaded."
             else:
                 response = f"File {file_name} not found in 'Files'"
