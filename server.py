@@ -16,6 +16,19 @@ def safe_path(base_path, path, follow_symlinks=True):
 def create_directory(dir_name: str) -> None:
     os.makedirs(dir_name, exist_ok=True)
 
+def directory_size(path: str) -> int:
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            total_size += os.path.getsize(fp)
+    return total_size
+
+def is_within_limit(size_to_add: int, current_dir: str) -> bool:
+    current_size = directory_size(current_dir)
+    limit = 2147483648
+    return (current_size + size_to_add) <= limit
+
 
 async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> None:
     address = writer.get_extra_info("peername")
@@ -49,7 +62,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
         command: str = data.decode()
         cmd_parts = command.split(" ", 1)
         cmd = cmd_parts[0]
-        # will be deleted later
+
         if cmd == "ls":
             try:
                 files = os.listdir(current_dir)
@@ -62,15 +75,18 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
             source_path = os.path.abspath(os.path.join(current_dir, file_name))
             destination_path = os.path.abspath(os.path.join(server_path, file_name))
             if safe_path(server_path, destination_path) and os.path.exists(source_path):
-                shutil.copy(source_path, destination_path)
-                os.chmod(destination_path, 0o440)
-                response = f"File {file_name} was uploaded."
+                if is_within_limit(os.path.getsize(source_path), server_path):
+                    shutil.copy(source_path, destination_path)
+                    os.chmod(destination_path, 0o440)
+                    response = f"File {file_name} was uploaded."
+                else:
+                    response = f"Upload failed. Limit of 2GB exceeded."
             else:
                 response = f"File {file_name} not found in 'Files'"
-                if not safe_path(server_path, source_path):
-                    print(
-                        f"{username} {address} tried to uplaod to a folder ({source_path}), which he has no permission to access"
-                    )
+            if not safe_path(server_path, source_path):
+                print(
+                    f"{username} {address} tried to uplaod to a folder ({source_path}), which he has no permission to access"
+                )
 
         elif cmd == "df":  # download / copy file from 'Uploads' to 'Files'
             file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
