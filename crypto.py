@@ -25,6 +25,7 @@ import base64
 from getpass import getpass
 
 SALT_SIZE = 12
+limit = 2**31 - 1
 
 Password = {b"": b""}
 user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
@@ -55,28 +56,40 @@ async def register_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
     global Password
-    data = await reader.read(96)
-    if not data:
-        return False
-    username, M = (
-        base64.urlsafe_b64encode(derive_key_from_password(data[:64], user_salt)),
-        data[64:],
-    )
-    secS, pub = CreateRegistrationResponse(M)
-    writer.write(pub)
-    rec0 = await reader.read(192)
-    if not rec0:
-        return False
-    rec1 = StoreUserRecord(secS, rec0)
-    # create new User with password and username
-    Password[username] = rec1
-    return await login_server(reader, writer)
+    address = writer.get_extra_info("peername")
+    while True:
+        data = await reader.read(96)
+        if not data:
+            return False
+        username, M = (
+            base64.urlsafe_b64encode(derive_key_from_password(data[:64], user_salt)),
+            data[64:],
+        )
+        username_database = ""
+        if username_database:
+            print(
+                f"{username} {address} attempted to create a new account with an already existing username"
+            )
+            writer.write("Retry".encode())
+            continue
+        secS, pub = CreateRegistrationResponse(M)
+        writer.write(pub)
+        rec0 = await reader.read(192)
+        if not rec0:
+            return False
+        rec1 = StoreUserRecord(secS, rec0)
+        # create new User with password and username
+        Password[username] = rec1
+        print(f"{username} {address} created a new account")
+        return await login_server(reader, writer)
 
 
 async def login_server(
     reader: StreamReader, writer: StreamWriter
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
+    address = writer.get_extra_info("peername")
+    username = ""
     while tries > 0:
         data = await reader.read(160)  # Read username + public key
         if not data:
@@ -97,7 +110,7 @@ async def login_server(
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
-            print("Login failed.")
+            print(f"{username} {address} failed on login")
             tries -= 1
             continue
         if not data:
@@ -107,13 +120,14 @@ async def login_server(
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
         if UserAuth(secS, authU) is not None:
-            print("Login failed.")
+            print(f"{username} {address} failed on login")
             writer.write("Login failed!".encode())
             tries -= 1
             continue
         writer.write(("works").encode())
-        print("Login was succesfull")
+        print(f"{username} {address} has performed a login")
         return key_sk, username
+    print(f"{username} {address} has reached the limit on false Passwords")
     writer.write("You have tried to many times! Please try later again".encode())
     return False
 
@@ -125,17 +139,20 @@ def handle_login_user(client_socket: socket.socket) -> bytes | Literal[False]:
 
 
 def register_user(client_socket: socket.socket) -> bytes | Literal[False]:
-    print("Registration: ")
-    username = good_hash(input("Username: "))
-    password = getpass("Password: ")
-    ids = Ids(username, "server")
+    while True:
+        print("Registration: ")
+        username = good_hash(input("Username: "))
+        password = getpass("Password: ")
+        ids = Ids(username, "server")
 
-    secU, M = CreateRegistrationRequest(password)
-    client_socket.send(username + M)
-    pub = client_socket.recv(64)
-    rec0, _ = FinalizeRequest(secU, pub, ids)
-    client_socket.send(rec0)
-    return login_user(client_socket)
+        secU, M = CreateRegistrationRequest(password)
+        client_socket.send(username + M)
+        if (pub := client_socket.recv(64)) == "Retry".encode():
+            print("Please try again!")
+            continue
+        rec0, _ = FinalizeRequest(secU, pub, ids)
+        client_socket.send(rec0)
+        return login_user(client_socket)
 
 
 def login_user(client_socket: socket.socket) -> bytes | Literal[False]:
@@ -207,18 +224,28 @@ def filecryption(file_path: str, encrypt: bool) -> int:
 
 
 def encryption(cipher: ChaCha20Poly1305, plaintext: bytes) -> bytes:
-    salt = os.urandom(SALT_SIZE)
-    ciphertext = cipher.encrypt(salt, plaintext, None)
-    return salt + ciphertext
+    ciphertext = b""
+    while plaintext:
+        plain_block = plaintext[:limit]
+        salt = os.urandom(SALT_SIZE)
+        cipher_block = cipher.encrypt(salt, plain_block, None)
+        plaintext = plaintext[limit:]
+        ciphertext += salt + cipher_block
+    return ciphertext
 
 
 def decryption(cipher: ChaCha20Poly1305, data: bytes) -> Literal[0] | bytes:
-    salt = data[:SALT_SIZE]
-    ciphertext = data[SALT_SIZE:]
-    try:
-        plaintext = cipher.decrypt(salt, ciphertext, None)
-    except InvalidTag:
-        return 0
+    plaintext = b""
+    while data:
+        data_block = data[limit:]
+        salt = data_block[:SALT_SIZE]
+        ciphertext = data_block[SALT_SIZE:]
+        try:
+            plain_block = cipher.decrypt(salt, ciphertext, None)
+        except InvalidTag:
+            return 0
+        data = data[limit:]
+        plaintext += plain_block
     return plaintext
 
 

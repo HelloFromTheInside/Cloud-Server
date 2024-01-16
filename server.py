@@ -35,12 +35,13 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
         try:
             data = await asyncio.wait_for(reader.read(1024), timeout=1000)
         except TimeoutError:
+            print(f"{username} {address} has reached the timeout")
             break
         old_salt = data[:24]
         enc_command = data[24:]
         key, salt, cipher = create_new_cipher(key, old_salt)
         if not (data := decryption(cipher, enc_command)):
-            print("Data was corupted, please try again!")
+            print(f"Data from {username} {address} was corupted")
             key, salt = await write(
                 key, writer, "Data was corupted, please try again!", salt
             )
