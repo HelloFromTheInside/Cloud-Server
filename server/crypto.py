@@ -14,11 +14,12 @@ from argon2.low_level import Type, hash_secret_raw
 from typing import Literal
 from asyncio import StreamReader, StreamWriter
 import base64
+from sqlconnector import get_password, store_user, update_last_login
+import datetime
 
 SALT_SIZE = 12
 LIMIT = 2**31 - 1
 
-Password = {b"": b""}
 user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
 
 
@@ -70,7 +71,9 @@ async def register_server(
             return False
         rec1 = StoreUserRecord(secS, rec0)
         # create new User with password and username
-        Password[username] = rec1
+        ct = datetime.datetime.now()
+        store_user(username, rec1, ct)
+        # Password[username] = rec1
         print(f"{username} {address} created a new account")
         return await login_server(reader, writer)
 
@@ -92,9 +95,10 @@ async def login_server(
             derive_key_from_password(username, user_salt)
         )
         try:
+            rec = get_password(username)
             # get rec from Database by username
-            rec = Password[username]
-        except Exception:
+            # rec = Password[username]
+        except IndexError:
             writer.write("Retry".encode())
             tries -= 1
             continue
@@ -117,6 +121,8 @@ async def login_server(
             continue
         writer.write(("works").encode())
         print(f"{username} {address} has performed a login")
+        ct = datetime.datetime.now()
+        update_last_login(username, ct)
         return key_sk, username
     print(f"{username} {address} has reached the limit on false Passwords")
     writer.write("You have tried to many times! Please try later again".encode())
