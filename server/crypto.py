@@ -89,7 +89,7 @@ async def login_server(
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
     address = writer.get_extra_info("peername")
-    username = ""
+    username = b""
     while tries > 0:
         data = await reader.read(160)  # Read username + public key
         if not data:
