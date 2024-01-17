@@ -1,14 +1,21 @@
 import os
 import shutil
 import asyncio
-from crypto import handle_login_server, encryption, decryption, create_new_cipher
+from crypto import (
+    handle_login_server,
+    encryption,
+    decryption,
+    create_new_cipher,
+    write_log,
+)
 from asyncio import StreamReader, StreamWriter
 
 folder_size_per_user = 5
 
-if not os.path.exists('log.txt'):
-    with open('log.txt', 'w'):
+if not os.path.exists("log.txt"):
+    with open("log.txt", "w"):
         pass
+
 
 # input vaildation to path traversal
 def safe_path(base_path: str, path: str, follow_symlinks=True) -> bool:
@@ -39,15 +46,12 @@ def is_within_limit(size_to_add: int, current_dir: str) -> bool:
 
 async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> None:
     address = writer.get_extra_info("peername")
-    log_message = f"Connection from {address}"
-    with open('log.txt', 'a') as file:
-        file.write(log_message + "\n")
-    print(f"Connection from {address}")
+    write_log(f"Connection from {address}")
     base_dir = os.getcwd()
     server_name = "Uploads"
     create_directory(current_dir := os.path.join(base_dir, "../client/Files"))
     if not (data := await handle_login_server(reader, writer)):
-        print(f"Connection from {address} disconnected")  # message to server
+        write_log(f"Connection from {address} disconnected")
         writer.close()
         return
     key = data[0]
@@ -58,13 +62,13 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
         try:
             data = await asyncio.wait_for(reader.read(1024), timeout=1000)
         except TimeoutError:
-            print(f"{username} {address} has reached the timeout")
+            write_log(f"{username} {address} has reached the timeout")
             break
         old_salt = data[:24]
         enc_command = data[24:]
         key, salt, cipher = create_new_cipher(key, old_salt)
         if not (data := decryption(cipher, enc_command)):
-            print(f"Data from {username} {address} was corupted")
+            write_log(f"Data from {username} {address} was corupted")
             key, salt = await write(
                 key, writer, "Data was corupted, please try again!", salt
             )
@@ -94,17 +98,13 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                     response = (
                         f"Upload failed. Limit of {folder_size_per_user}GB exceeded."
                     )
-                    log_message = f"{username} {address} exceeded the limit of file space"
-                    with open('log.txt', 'a') as file:
-                        file.write(log_message + "\n")
-                    print(log_message)
+                    write_log(f"{username} {address} exceeded the limit of file space")
             else:
                 response = f"File {file_name} not found in 'Files'"
                 if not safe_path(server_path, source_path):
-                    log_message = f"{username} {address} tried to upload to a folder ({source_path}), which he has no permission to access"
-                    with open('log.txt', 'a') as file:
-                        file.write(log_message + "\n")
-                    print(log_message)
+                    write_log(
+                        f"{username} {address} tried to upload to a folder ({source_path}), which he has no permission to access"
+                    )
 
         elif cmd == "df":  # download / copy file from 'Uploads' to 'Files'
             file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
@@ -117,9 +117,9 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
             else:
                 response = f"File {file_name} not found"
                 if not safe_path(server_path, source_path):
-                    log_message = f"{username} {address} tried to download a file ({source_path}), which he has no permission to access"
-                    with open('log.txt', 'a') as file:
-                        file.write(log_message + "\n")
+                    write_log(
+                        f"{username} {address} tried to download a file ({source_path}), which he has no permission to access"
+                    )
 
         elif cmd == "rm":  # deleting files either in Uploads
             file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
@@ -128,15 +128,14 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                 os.remove(file_path)
                 response = f"File {file_name} deleted"
                 log_message = f"Client {address} deleted {file_name} in 'Files'"
-                with open('log.txt', 'a') as file:
+                with open("log.txt", "a") as file:
                     file.write(log_message + "\n")
             else:
                 response = "File not found"
                 if not safe_path(server_path, file_path):
-                    log_message = f"{username} {address} tried to delete a file ({file_path}), which he has no permission to access"
-                    with open('log.txt', 'a') as file:
-                        file.write(log_message + "\n")
-
+                    write_log(
+                        f"{username} {address} tried to delete a file ({file_path}), which he has no permission to access"
+                    )
 
         elif cmd == "qp":
             response = "Disconnecting."
@@ -150,10 +149,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
             key, salt = await write(key, writer, response, salt)
         except ConnectionResetError:
             break
-    log_message = f"Connection from {address} disconnected"
-    with open('log.txt', 'a') as file:
-        file.write(log_message + "\n")
-    print(f"Connection from {address} disconnected")
+    write_log(f"Connection from {address} disconnected")
     writer.close()
 
 

@@ -22,6 +22,12 @@ Password = {b"": b""}
 user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
 
 
+def write_log(log_message: str) -> None:
+    with open("log.txt", "a") as file:
+        file.write(log_message + "\n")
+    print(log_message)
+
+
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
     derived_key = hash_secret_raw(password, salt, 50, 102400, 50, 32, Type.ID)
     return derived_key
@@ -58,7 +64,7 @@ async def register_server(
         )
         username_database = ""
         if username_database:
-            print(
+            write_log(
                 f"{username} {address} attempted to create a new account with an already existing username"
             )
             writer.write("Retry".encode())
@@ -71,7 +77,7 @@ async def register_server(
         rec1 = StoreUserRecord(secS, rec0)
         # create new User with password and username
         Password[username] = rec1
-        print(f"{username} {address} created a new account")
+        write_log(f"{username} {address} created a new account")
         return await login_server(reader, writer)
 
 
@@ -101,7 +107,7 @@ async def login_server(
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
-            print(f"{username} {address} failed on login")
+            write_log(f"{username} {address} failed on login")
             tries -= 1
             continue
         if not data:
@@ -111,14 +117,14 @@ async def login_server(
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
         if UserAuth(secS, authU) is not None:
-            print(f"{username} {address} failed on login")
+            write_log(f"{username} {address} failed on login")
             writer.write("Login failed!".encode())
             tries -= 1
             continue
         writer.write(("works").encode())
-        print(f"{username} {address} has performed a login")
+        write_log(f"{username} {address} has performed a login")
         return key_sk, username
-    print(f"{username} {address} has reached the limit on false Passwords")
+    write_log(f"{username} {address} has reached the limit on false Passwords")
     writer.write("You have tried to many times! Please try later again".encode())
     return False
 
