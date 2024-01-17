@@ -14,17 +14,20 @@ from argon2.low_level import Type, hash_secret_raw
 from typing import Literal
 from asyncio import StreamReader, StreamWriter
 import base64
+import datetime
 
 SALT_SIZE = 12
 LIMIT = 2**31 - 1
+
 
 Password = {b"": b""}
 user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
 
 
 def write_log(log_message: str) -> None:
+    ct = datetime.datetime.now()
     with open("log.txt", "a") as file:
-        file.write(log_message + "\n")
+        file.write(f"{ct}: {log_message}\n")
     print(log_message)
 
 
