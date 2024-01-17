@@ -65,7 +65,7 @@ async def register_server(
         username_database = ""
         if username_database:
             write_log(
-                f"{username} {address} attempted to create a new account with an already existing username"
+                f"{username.decode()} {address} attempted to create a new account with an already existing username"
             )
             writer.write("Retry".encode())
             continue
@@ -77,7 +77,7 @@ async def register_server(
         rec1 = StoreUserRecord(secS, rec0)
         # create new User with password and username
         Password[username] = rec1
-        write_log(f"{username} {address} created a new account")
+        write_log(f"{username.decode()} {address} created a new account")
         return await login_server(reader, writer)
 
 
@@ -107,7 +107,7 @@ async def login_server(
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
-            write_log(f"{username} {address} failed on login")
+            write_log(f"{username.decode()} {address} failed on login")
             tries -= 1
             continue
         if not data:
@@ -117,14 +117,14 @@ async def login_server(
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
         if UserAuth(secS, authU) is not None:
-            write_log(f"{username} {address} failed on login")
+            write_log(f"{username.decode()} {address} failed on login")
             writer.write("Login failed!".encode())
             tries -= 1
             continue
         writer.write(("works").encode())
-        write_log(f"{username} {address} has performed a login")
+        write_log(f"{username.decode()} {address} has performed a login")
         return key_sk, username
-    write_log(f"{username} {address} has reached the limit on false Passwords")
+    write_log(f"{username.decode()} {address} has reached the limit on false Passwords")
     writer.write("You have tried to many times! Please try later again".encode())
     return False
 
