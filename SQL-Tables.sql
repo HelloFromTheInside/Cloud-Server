@@ -17,6 +17,12 @@ CREATE TABLE Files (
     EncryptionStatus VARCHAR(50),
     FOREIGN KEY (UserID) REFERENCES Users(UserID)
 );
+CREATE TABLE PublicKeys (
+    KeyID INT AUTO_INCREMENT PRIMARY KEY,
+    PublicKey TEXT NOT NULL,
+    UserID INT NOT NULL,
+    FOREIGN KEY(UserID) REFERENCES Users(UserID)
+);
 CREATE TABLE AccessPermissions (
     AccessID INT AUTO_INCREMENT PRIMARY KEY,
     FileID INT NOT NULL,
