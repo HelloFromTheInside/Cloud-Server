@@ -41,8 +41,12 @@ if __name__ == "__main__":
     client_socket.connect((host, port))
     try:
         salt = b""
-        if not (key := handle_login_user(client_socket)):
-            raise socket.timeout
+        if not (data := handle_login_user(client_socket)):
+            raise Exception("Login has failed!")
+        key = data[0]
+        if not data[1]:
+            raise Exception("Key for File en/decryption was tempered with!")
+        file_key: bytes = data[1]
         while True:
             try:
                 command = input(">>> ")
@@ -56,12 +60,12 @@ if __name__ == "__main__":
                 continue
             elif cmd_parts[0] == "uf":
                 file_name = "Files/" + (cmd_parts[1] if len(cmd_parts) > 1 else "")
-                if filecryption(file_name, True):
+                if filecryption(file_name, True, file_key):
                     continue
             elif cmd_parts[0] == "df":
                 key, salt = send_command(key, salt, command)
                 file_name = "Files/" + (cmd_parts[1] if len(cmd_parts) > 1 else "")
-                if filecryption(file_name, False) == 2:
+                if filecryption(file_name, False, file_key) == 2:
                     print("File is corrupted, please continue with precaution!")
                 continue
             key, salt = send_command(key, salt, command)
