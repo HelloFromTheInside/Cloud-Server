@@ -14,7 +14,7 @@ from argon2.low_level import Type, hash_secret_raw
 from typing import Literal
 from asyncio import StreamReader, StreamWriter
 import base64
-from sqlconnector import get_password, store_user, update_last_login
+from sqlconnector import get_password, store_user, update_last_login, get_username
 import datetime
 
 SALT_SIZE = 12
@@ -57,8 +57,7 @@ async def register_server(
             base64.urlsafe_b64encode(derive_key_from_password(data[:64], user_salt)),
             data[64:],
         )
-        username_database = ""
-        if username_database:
+        if get_username(username):
             print(
                 f"{username} {address} attempted to create a new account with an already existing username"
             )
@@ -96,8 +95,6 @@ async def login_server(
         )
         try:
             rec = get_password(username)
-            # get rec from Database by username
-            # rec = Password[username]
         except IndexError:
             writer.write("Retry".encode())
             tries -= 1

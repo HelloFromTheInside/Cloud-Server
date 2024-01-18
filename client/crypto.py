@@ -19,6 +19,7 @@ from getpass import getpass
 
 SALT_SIZE = 12
 LIMIT = 2**31 - 1
+FILE_KEY = "secret.txt"
 
 
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
@@ -174,11 +175,11 @@ def create_key(password: bytes) -> None:
     cipher = ChaCha20Poly1305(key)
     file_key = os.urandom(32)
     cipher_key = encryption(cipher, file_key)
-    write_file("secret.txt", salt + cipher_key)
+    write_file(FILE_KEY, salt + cipher_key)
 
 
 def get_key(password: bytes) -> bytes | Literal[0]:
-    data = read_file("secret.txt")
+    data = read_file(FILE_KEY)
     salt = data[:24]
     cipher_key = data[24:]
     key = derive_key_from_password(password, salt)

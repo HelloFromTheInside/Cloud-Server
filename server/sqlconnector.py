@@ -39,3 +39,11 @@ def update_last_login(username: bytes, timestamp: datetime.datetime) -> None:
         "UPDATE Users SET LastLogin  = ? WHERE Username = ?", (timestamp, username)
     )
     conn.commit()
+
+
+def get_username(username: bytes) -> bool:
+    return bool(
+        cur.execute(
+            "SELECT Username FROM Users WHERE Username = ?", (username,)
+        ).fetchall()[0][0]
+    )
