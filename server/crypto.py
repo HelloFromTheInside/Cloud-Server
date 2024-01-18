@@ -20,7 +20,15 @@ import datetime
 SALT_SIZE = 12
 LIMIT = 2**31 - 1
 
+
 user_salt = b"\x05&\xbe_-\x19\xcbLIRK]\x00\xbb\xa6)\x9fa]\xdf\xbb\x1a\xfb4"
+
+
+def write_log(log_message: str) -> None:
+    ct = datetime.datetime.now()
+    with open("log.txt", "a") as file:
+        file.write(f"{ct}: {log_message}\n")
+    print(log_message)
 
 
 def derive_key_from_password(password: bytes, salt: bytes) -> bytes:
@@ -58,8 +66,8 @@ async def register_server(
             data[64:],
         )
         if get_username(username):
-            print(
-                f"{username} {address} attempted to create a new account with an already existing username"
+            write_log(
+                f"{username.decode()} {address} attempted to create a new account with an already existing username"
             )
             writer.write("Retry".encode())
             continue
@@ -73,7 +81,7 @@ async def register_server(
         ct = datetime.datetime.now()
         store_user(username, rec1, ct)
         # Password[username] = rec1
-        print(f"{username} {address} created a new account")
+        write_log(f"{username.decode()} {address} created a new account")
         return await login_server(reader, writer)
 
 
@@ -82,7 +90,7 @@ async def login_server(
 ) -> tuple[bytes, bytes] | Literal[False]:
     tries = 5
     address = writer.get_extra_info("peername")
-    username = ""
+    username = b""
     while tries > 0:
         data = await reader.read(160)  # Read username + public key
         if not data:
@@ -102,7 +110,7 @@ async def login_server(
         resp, sk, secS = CreateCredentialResponse(pub, rec, ids, "")
         writer.write(resp)
         if (data := await reader.read(116)) == "Retry".encode():  # Read salt + encauthU
-            print(f"{username} {address} failed on login")
+            write_log(f"{username.decode()} {address} failed on login")
             tries -= 1
             continue
         if not data:
@@ -112,16 +120,16 @@ async def login_server(
         cipher = ChaCha20Poly1305(key_sk)
         authU = decryption(cipher, encauthU)
         if UserAuth(secS, authU) is not None:
-            print(f"{username} {address} failed on login")
+            write_log(f"{username.decode()} {address} failed on login")
             writer.write("Login failed!".encode())
             tries -= 1
             continue
         writer.write(("works").encode())
-        print(f"{username} {address} has performed a login")
         ct = datetime.datetime.now()
         update_last_login(username, ct)
+        write_log(f"{username.decode()} {address} has performed a login")
         return key_sk, username
-    print(f"{username} {address} has reached the limit on false Passwords")
+    write_log(f"{username.decode()} {address} has reached the limit on false Passwords")
     writer.write("You have tried to many times! Please try later again".encode())
     return False
 
