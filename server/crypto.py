@@ -104,6 +104,9 @@ async def login_server(
         try:
             rec = get_password(username)
         except IndexError:
+            write_log(
+                f"{username.decode()} {address} tried to use a username, which does not yet exist"
+            )
             writer.write("Retry".encode())
             tries -= 1
             continue
