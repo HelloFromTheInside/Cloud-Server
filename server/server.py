@@ -50,10 +50,15 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
     base_dir = os.getcwd()
     server_name = "Uploads"
     create_directory(current_dir := os.path.join(base_dir, "../client/Files"))
-    if not (data := await handle_login_server(reader, writer)):
+    try:
+        data = await asyncio.wait_for(handle_login_server(reader, writer), timeout=1000)
+    except TimeoutError:
+        data = b""
+    if not data:
         write_log(f"Connection from {address} disconnected")
         writer.close()
         return
+
     key = data[0]
     username = data[1].decode()
     create_directory(server_path := os.path.join(base_dir, server_name, username))
