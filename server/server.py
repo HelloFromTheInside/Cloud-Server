@@ -62,8 +62,8 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
     key = data[0]
     username = data[1].decode()
     create_directory(server_path := os.path.join(base_dir, server_name, username))
-
-    while True:
+    tries = 10
+    while tries > 0:
         try:
             data = await asyncio.wait_for(reader.read(1024), timeout=1000)
         except TimeoutError:
@@ -77,6 +77,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
             key, salt = await write(
                 key, writer, "Data was corupted, please try again!", salt
             )
+            tries -= 2
             continue
         command: str = data.decode()
         cmd_parts = command.split(" ", 1)
@@ -110,6 +111,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                     write_log(
                         f"{username} {address} tried to upload to a folder ({source_path}), which he has no permission to access"
                     )
+                    tries -= 1
 
         elif cmd == "df":  # download / copy file from 'Uploads' to 'Files'
             file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
@@ -125,6 +127,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                     write_log(
                         f"{username} {address} tried to download a file ({source_path}), which he has no permission to access"
                     )
+                    tries -= 1
 
         elif cmd == "rm":  # deleting files either in Uploads
             file_name = f"{cmd_parts[1] if len(cmd_parts) > 1 else ''}.enc"
@@ -141,6 +144,7 @@ async def handle_client_commands(reader: StreamReader, writer: StreamWriter) -> 
                     write_log(
                         f"{username} {address} tried to delete a file ({file_path}), which he has no permission to access"
                     )
+                    tries -= 1
 
         elif cmd == "qp":
             response = "Disconnecting."
